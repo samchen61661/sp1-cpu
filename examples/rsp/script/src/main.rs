@@ -4,9 +4,7 @@ use bincode;
 use clap::Parser;
 use rsp_client_executor::{io::ClientExecutorInput, CHAIN_ID_ETH_MAINNET};
 use sp1_prover::{components::DefaultProverComponents, RecursionInput, SP1Prover};
-use sp1_sdk::{
-    action::compress_all_proofs, SP1Proof, SP1ProofCommonData, SP1ProofWithPublicValues,
-};
+use sp1_sdk::{SP1Proof, SP1ProofCommonData, SP1ProofWithPublicValues};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -112,7 +110,7 @@ fn main() {
         println!("shard proof verification finished.");
     } else if args.compress {
         println!("Starting compress proof generation.");
-        compress_all_proofs(num_proofs).unwrap();
+        // compress_all_proofs(num_proofs).unwrap();
         println!("Proof generation finished.");
         let prover = SP1Prover::<DefaultProverComponents>::new();
 

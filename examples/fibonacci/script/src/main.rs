@@ -3,8 +3,8 @@ use bincode;
 use clap::Parser;
 use sp1_prover::{components::DefaultProverComponents, RecursionInput, SP1Prover};
 use sp1_sdk::{
-    action::compress_all_proofs, include_elf, utils, ProverClient, SP1Proof, SP1ProofCommonData,
-    SP1ProofWithPublicValues, SP1Stdin,
+    include_elf, utils, ProverClient, SP1Proof, SP1ProofCommonData, SP1ProofWithPublicValues,
+    SP1Stdin,
 };
 use std::fs::File;
 use std::io::Read;
@@ -90,7 +90,7 @@ fn main() {
         println!("shard proof verification finished.");
     } else if args.compress {
         println!("Starting compress proof generation.");
-        compress_all_proofs(4).unwrap();
+        // compress_all_proofs(4).unwrap();
         println!("Proof generation finished.");
         let prover = SP1Prover::<DefaultProverComponents>::new();
 

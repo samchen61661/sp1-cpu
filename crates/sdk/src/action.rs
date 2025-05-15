@@ -1,20 +1,14 @@
 use sp1_core_executor::{ExecutionReport, HookEnv, SP1ContextBuilder};
 use sp1_core_machine::io::SP1Stdin;
 use sp1_primitives::io::SP1PublicValues;
-use sp1_prover::components::SP1ProverComponents;
 use sp1_prover::{components::DefaultProverComponents, RecursionInput, SP1Prover, SP1ProvingKey};
 
 use anyhow::{anyhow, Ok, Result};
 use bincode;
 use sp1_stark::{SP1CoreOpts, SP1ProverOpts};
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::{provers::ProofOpts, Prover, SP1ProofKind, SP1ProofWithPublicValues};
-
-const PREFIX: &str = "./proofs/";
 
 /// Builder to prepare and configure execution of a program on an input.
 /// May be run with [Self::run].
@@ -150,7 +144,7 @@ impl<'a> Prove<'a> {
     }
 
     // generate shard proofs
-    pub fn run_shard_proof(self) -> Result<()> {
+    pub fn run_shard_proof(self) -> Result<Vec<RecursionInput>> {
         let Self {
             prover,
             kind: _,
@@ -166,13 +160,14 @@ impl<'a> Prove<'a> {
         let context = context_builder.build();
 
         // Remove proofs folder and recreate it
-        fs::remove_dir_all(PREFIX).unwrap_or(()); // Ignore error if directory doesn't exist
-        fs::create_dir_all(PREFIX)?;
+        // fs::remove_dir_all(PREFIX).unwrap_or(()); // Ignore error if directory doesn't exist
+        // fs::create_dir_all(PREFIX)?;
         let (common_data, proofs) = prover.prove_shard(pk, stdin, proof_opts, context)?;
-        let common_path = Path::new(PREFIX).join("common_data.bin");
-        let common_serialized = bincode::serialize(&common_data)?;
-        let mut common_file = File::create(common_path)?;
-        common_file.write_all(&common_serialized)?;
+        // let common_path = Path::new(PREFIX).join("common_data.bin");
+        // let common_serialized = bincode::serialize(&common_data)?;
+        // let mut common_file = File::create(common_path)?;
+        // common_file.write_all(&common_serialized)?;
+        let mut output: Vec<RecursionInput> = Vec::new();
 
         // Save each ShardProof to proof_0.bin, proof_1.bin, etc.
         for (index, shard_proof) in proofs.iter().enumerate() {
@@ -181,10 +176,11 @@ impl<'a> Prove<'a> {
                 proof: shard_proof.clone(),
                 is_first_shard: index == 0,
             };
-            let proof_path = Path::new(PREFIX).join(format!("proof_{}.bin", index));
-            recursion_input.save(proof_path)?;
+            output.push(recursion_input);
+            //let proof_path = Path::new(PREFIX).join(format!("proof_{}.bin", index));
+            //recursion_input.save(proof_path)?;
         }
-        Ok(())
+        Ok(output)
     }
 
     /// Set the proof kind to the core mode. This is the default.
@@ -277,12 +273,9 @@ impl<'a> Prove<'a> {
 }
 
 // generate first layer recursion proof
-pub fn run_recursion_first_layer(
-    prover: &SP1Prover<DefaultProverComponents>,
-    index: usize,
-) -> Result<()> {
-    let proof_path = Path::new(PREFIX).join(format!("proof_{}.bin", index));
-    let input = RecursionInput::load(&proof_path)?;
+pub fn run_recursion_first_layer(input: RecursionInput) -> Result<RecursionInput> {
+    // let proof_path = Path::new(PREFIX).join(format!("proof_{}.bin", index));
+    // let input = RecursionInput::load(&proof_path)?;
     let recursion_input = match input {
         RecursionInput::Single { .. } => input,
         RecursionInput::Double { .. } => {
@@ -290,42 +283,41 @@ pub fn run_recursion_first_layer(
         }
     };
 
+    let prover = SP1Prover::<DefaultProverComponents>::new();
     let reduced_proof = prover.compress_proofs(&recursion_input, false)?;
     let recursion_input = RecursionInput::Single {
         vk: reduced_proof.vk,
         proof: reduced_proof.proof,
         is_first_shard: false, // not used
     };
-    let proof_path = Path::new(PREFIX).join(format!("reduced_0_{}.bin", index));
-    recursion_input.save(proof_path)?;
-    Ok(())
+    // let proof_path = Path::new(PREFIX).join(format!("reduced_0_{}.bin", index));
+    // recursion_input.save(proof_path)?;
+    Ok(recursion_input)
 }
 
 // combine two recursion proofs into one
 pub fn run_recursion_two_to_one(
-    prover: &SP1Prover<DefaultProverComponents>,
-    path1: impl AsRef<Path>,
-    path2: impl AsRef<Path>,
-    out_path: impl AsRef<Path>,
+    input1: RecursionInput,
+    input2: RecursionInput,
     is_complete: bool,
-) -> Result<()> {
-    let path1 = path1.as_ref();
-    let path2 = path2.as_ref();
+) -> Result<RecursionInput> {
+    // let path1 = path1.as_ref();
+    // let path2 = path2.as_ref();
 
-    let input1 = RecursionInput::load(&path1)?;
-    let input2 = RecursionInput::load(&path2)?;
+    // let input1 = RecursionInput::load(&path1)?;
+    // let input2 = RecursionInput::load(&path2)?;
 
     // Ensure both inputs are Single (containing InnerSC proofs)
     let (vk1, proof1) = match input1 {
         RecursionInput::Single { vk, proof, .. } => (vk, proof),
         RecursionInput::Double { .. } => {
-            return Err(anyhow!("Expected Single RecursionInput in {}", path1.display()));
+            return Err(anyhow!("Expected Single RecursionInput in input1"));
         }
     };
     let (vk2, proof2) = match input2 {
         RecursionInput::Single { vk, proof, .. } => (vk, proof),
         RecursionInput::Double { .. } => {
-            return Err(anyhow!("Expected Single RecursionInput in {}", path2.display()));
+            return Err(anyhow!("Expected Single RecursionInput in input2"));
         }
     };
 
@@ -333,6 +325,7 @@ pub fn run_recursion_two_to_one(
     let recursion_input = RecursionInput::Double { vks_and_proofs: [(vk1, proof1), (vk2, proof2)] };
 
     // Compress the two proofs into one
+    let prover = SP1Prover::<DefaultProverComponents>::new();
     let reduced_proof = prover.compress_proofs(&recursion_input, is_complete)?;
 
     // Save the combined proof
@@ -341,10 +334,11 @@ pub fn run_recursion_two_to_one(
         proof: reduced_proof.proof,
         is_first_shard: false,
     };
-    recursion_input.save(&out_path)?;
-    Ok(())
+    // recursion_input.save(&out_path)?;
+    Ok(recursion_input)
 }
 
+/*
 pub fn compress_all_proofs(num_proofs: usize) -> Result<()> {
     let prover = SP1Prover::<DefaultProverComponents>::new();
     for i in 0..num_proofs {
@@ -384,3 +378,4 @@ pub fn compress_all_proofs(num_proofs: usize) -> Result<()> {
 
     Ok(())
 }
+ */
