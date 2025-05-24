@@ -367,7 +367,25 @@ impl<C: SP1ProverComponents> SP1Prover<C> {
 
             // Collect the shard proofs and the public values stream.
             let shard_proofs: Vec<ShardProof<_>> = proof_rx.iter().collect();
-            let (public_values_stream, cycles) = handle.join().unwrap().unwrap();
+            let joined_handle = handle.join();
+            let (public_values_stream, cycles) = match joined_handle {
+                Ok(thread_result) => {
+                    // If the thread joined successfully, unwrap its result as before.
+                    // If thread_result is an Err, this will panic (original behavior for inner error).
+                    thread_result.unwrap()
+                }
+                Err(e) => {
+                    let panic_msg = if let Some(s) = e.downcast_ref::<String>() {
+                        s.clone()
+                    } else if let Some(s) = e.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else {
+                        "Unknown panic in core proving thread".to_string()
+                    };
+                    tracing::error!("Core proving thread panicked: {}. Aborting.", panic_msg);
+                    std::process::abort();
+                }
+            };
             let public_values = SP1PublicValues::from(&public_values_stream);
             Self::check_for_high_cycles(cycles);
             Ok(SP1CoreProof {
