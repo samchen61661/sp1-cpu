@@ -143,7 +143,12 @@ where
                         // Send the checkpoint.
                         checkpoints_tx
                             .send((index, checkpoint_file, done, runtime.state.global_clk))
-                            .unwrap();
+                            .map_err(|e| {
+                                SP1CoreProverError::ChannelSendError(format!(
+                                    "Failed to send checkpoint to channel: {:?}",
+                                    e
+                                ))
+                            })?;
 
                         // If we've reached the final checkpoint, break out of the loop.
                         if done {
@@ -500,4 +505,6 @@ pub enum SP1CoreProverError {
     IoError(io::Error),
     #[error("serialization error: {0}")]
     SerializationError(bincode::Error),
+    #[error("channel send error: {0}")]
+    ChannelSendError(String),
 }
