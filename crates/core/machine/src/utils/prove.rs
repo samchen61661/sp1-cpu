@@ -409,13 +409,27 @@ where
         });
 
         // Wait until the checkpoint generator handle has fully finished.
-        let public_values_stream = checkpoint_generator_handle.join().unwrap().unwrap();
+        let public_values_stream = checkpoint_generator_handle.join().map_err(|e| {
+            SP1CoreProverError::RuntimeError(format!(
+                "Checkpoint generator thread panicked: {:?}",
+                e
+            ))
+        })??;
 
         // Wait until the records and traces have been fully generated for phase 2.
-        p2_record_and_trace_gen_handles.into_iter().for_each(|handle| handle.join().unwrap());
+        for handle in p2_record_and_trace_gen_handles {
+            handle.join().map_err(|e| {
+                SP1CoreProverError::RuntimeError(format!(
+                    "Phase 2 record and trace generation thread panicked: {:?}",
+                    e
+                ))
+            })?;
+        }
 
         // Wait until the phase 2 prover has finished.
-        p2_prover_handle.join().unwrap();
+        p2_prover_handle.join().map_err(|e| {
+            SP1CoreProverError::RuntimeError(format!("Phase 2 prover thread panicked: {:?}", e))
+        })?;
 
         // Log some of the `ExecutionReport` information.
         let report_aggregate = report_aggregate.lock().unwrap();
@@ -507,4 +521,6 @@ pub enum SP1CoreProverError {
     SerializationError(bincode::Error),
     #[error("channel send error: {0}")]
     ChannelSendError(String),
+    #[error("runtime error: {0}")]
+    RuntimeError(String),
 }
