@@ -1,14 +1,19 @@
 use sp1_core_executor::{ExecutionReport, HookEnv, SP1ContextBuilder};
 use sp1_core_machine::io::SP1Stdin;
 use sp1_primitives::io::SP1PublicValues;
-use sp1_prover::{components::DefaultProverComponents, RecursionInput, SP1Prover, SP1ProvingKey};
+use sp1_prover::{
+    components::DefaultProverComponents, RecursionCpuResult, RecursionInput, SP1Prover,
+    SP1ProvingKey,
+};
 
 use anyhow::{anyhow, Ok, Result};
 use bincode;
-use sp1_stark::{SP1CoreOpts, SP1ProverOpts};
+use sp1_stark::{baby_bear_poseidon2::BabyBearPoseidon2, SP1CoreOpts, SP1ProverOpts};
 use std::time::Duration;
 
 use crate::{provers::ProofOpts, Prover, SP1ProofKind, SP1ProofWithPublicValues};
+
+pub type InnerSC = BabyBearPoseidon2;
 
 /// Builder to prepare and configure execution of a program on an input.
 /// May be run with [Self::run].
@@ -273,7 +278,7 @@ impl<'a> Prove<'a> {
 }
 
 // generate first layer recursion proof
-pub fn run_recursion_first_layer(input: RecursionInput) -> Result<RecursionInput> {
+pub fn run_recursion_first_layer(input: RecursionInput) -> Result<RecursionCpuResult> {
     // let proof_path = Path::new(PREFIX).join(format!("proof_{}.bin", index));
     // let input = RecursionInput::load(&proof_path)?;
     let recursion_input = match input {
@@ -284,15 +289,16 @@ pub fn run_recursion_first_layer(input: RecursionInput) -> Result<RecursionInput
     };
 
     let prover = SP1Prover::<DefaultProverComponents>::new();
-    let reduced_proof = prover.compress_proofs(&recursion_input, false)?;
+    Ok(prover.compress_proofs_trace(&recursion_input, false))
+    /*
     let recursion_input = RecursionInput::Single {
         vk: reduced_proof.vk,
         proof: reduced_proof.proof,
         is_first_shard: false, // not used
     };
+    */
     // let proof_path = Path::new(PREFIX).join(format!("reduced_0_{}.bin", index));
     // recursion_input.save(proof_path)?;
-    Ok(recursion_input)
 }
 
 // combine two recursion proofs into one
@@ -300,7 +306,7 @@ pub fn run_recursion_two_to_one(
     input1: RecursionInput,
     input2: RecursionInput,
     is_complete: bool,
-) -> Result<RecursionInput> {
+) -> Result<RecursionCpuResult> {
     // let path1 = path1.as_ref();
     // let path2 = path2.as_ref();
 
@@ -326,8 +332,8 @@ pub fn run_recursion_two_to_one(
 
     // Compress the two proofs into one
     let prover = SP1Prover::<DefaultProverComponents>::new();
-    let reduced_proof = prover.compress_proofs(&recursion_input, is_complete)?;
-
+    Ok(prover.compress_proofs_trace(&recursion_input, is_complete))
+    /*
     // Save the combined proof
     let recursion_input = RecursionInput::Single {
         vk: reduced_proof.vk,
@@ -336,9 +342,10 @@ pub fn run_recursion_two_to_one(
     };
     // recursion_input.save(&out_path)?;
     Ok(recursion_input)
+     */
 }
 
-/* 
+/*
 pub fn compress_all_proofs(num_proofs: usize) -> Result<()> {
     let prover = SP1Prover::<DefaultProverComponents>::new();
     for i in 0..num_proofs {

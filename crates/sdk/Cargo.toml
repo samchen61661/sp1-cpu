@@ -56,6 +56,7 @@ sp1-recursion-circuit = { workspace = true }
 p3-matrix = { workspace = true }
 p3-commit = { workspace = true }
 p3-symmetric = { workspace = true }
+sp1-recursion-core = { workspace = true }
 
 [dev-dependencies]
 test-artifacts = { workspace = true }

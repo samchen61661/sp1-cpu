@@ -34,7 +34,6 @@ use std::{
 
 use crate::shapes::SP1CompressProgramShape;
 use lru::LruCache;
-use std::io::Cursor;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;
@@ -94,7 +93,6 @@ pub type CoreSC = BabyBearPoseidon2;
 
 /// The configuration for the inner prover.
 pub type InnerSC = BabyBearPoseidon2;
-
 /// The configuration for the outer prover.
 pub type OuterSC = BabyBearPoseidon2Outer;
 
@@ -124,6 +122,13 @@ enum TracesOrInput {
         )>,
     ),
     CircuitWitness(Box<SP1CircuitWitness>),
+}
+
+#[derive(Debug, Clone)]
+pub struct RecursionCpuResult {
+    pub traces: Vec<(String, RowMajorMatrix<Val<InnerSC>>)>,
+    pub record: ExecutionRecord<BabyBear>,
+    pub program: Arc<RecursionProgram<BabyBear>>,
 }
 
 /// A end-to-end prover implementation for the SP1 RISC-V zkVM.
@@ -403,7 +408,7 @@ impl<C: SP1ProverComponents> SP1Prover<C> {
         &self,
         input: &RecursionInput,
         is_complete: bool,
-    ) -> (Vec<(String, RowMajorMatrix<Val<InnerSC>>)>, ExecutionRecord<BabyBear>) {
+    ) -> RecursionCpuResult {
         let mut witness_stream = Vec::new();
         let (witness_stream, program) = match input {
             RecursionInput::Single { vk, proof, is_first_shard } => {
@@ -438,7 +443,7 @@ impl<C: SP1ProverComponents> SP1Prover<C> {
         self.compress_prover.machine().generate_dependencies_no_opt(&mut records, None);
 
         let traces = self.compress_prover.generate_traces(&records[0]);
-        
+
         // Serialize traces to bytes and print total size
         let mut total_size_bytes = 0;
         for (name, matrix) in &traces {
@@ -449,34 +454,15 @@ impl<C: SP1ProverComponents> SP1Prover<C> {
             total_size_bytes += trace_size;
             tracing::info!("Trace '{}': {} bytes", name, trace_size);
         }
-        
+
         let total_size_mb = total_size_bytes as f64 / (1024.0 * 1024.0);
         tracing::info!("Total traces size: {} bytes ({:.2} MB)", total_size_bytes, total_size_mb);
-        
-        (traces, records.into_iter().next().unwrap())
+
+        RecursionCpuResult { traces, record: records.into_iter().next().unwrap(), program }
     }
 
-    pub fn compress_proofs_prove(
-        &self,
-        input: &RecursionInput,
-        is_complete: bool,
-        traces: Vec<(String, RowMajorMatrix<Val<InnerSC>>)>,
-        record: ExecutionRecord<BabyBear>,
-    ) -> Result<SP1ReduceProof<InnerSC>, SP1RecursionProverError> {
-        let program = match input {
-            RecursionInput::Single { vk, proof, is_first_shard } => {
-                let input = self.prepare_first_layer_input(&vk, &proof, *is_first_shard);
-                self.recursion_program(&input)
-            }
-            RecursionInput::Double { vks_and_proofs } => {
-                let input = SP1CompressWitnessValues {
-                    vks_and_proofs: vks_and_proofs.to_vec(),
-                    is_complete,
-                };
-                let input_with_merkle = self.make_merkle_proofs(input);
-                self.compress_program(false, &input_with_merkle)
-            }
-        };
+    pub fn compress_proofs_prove(&self, cpu_result: RecursionCpuResult) -> RecursionInput {
+        let program = cpu_result.program;
 
         // Get the keys.
         let (pk, vk) = self.compress_prover.setup(&program);
@@ -493,7 +479,7 @@ impl<C: SP1ProverComponents> SP1Prover<C> {
         //        );
 
         // Commit to the record and traces.
-        let data = self.compress_prover.commit(&record, traces);
+        let data = self.compress_prover.commit(&cpu_result.record, cpu_result.traces);
 
         // Generate the proof.
         let proof = tracing::debug_span!("open")
@@ -509,19 +495,7 @@ impl<C: SP1ProverComponents> SP1Prover<C> {
             )
             .unwrap();
 
-        Ok(SP1ReduceProof { vk, proof })
-    }
-
-    pub fn compress_proofs(
-        &self,
-        input: &RecursionInput,
-        is_complete: bool,
-    ) -> Result<SP1ReduceProof<InnerSC>, SP1RecursionProverError> {
-        // Generate traces and record
-        let (traces, record) = self.compress_proofs_trace(input, is_complete);
-        
-        // Generate proof using the traces and record
-        self.compress_proofs_prove(input, is_complete, traces, record)
+        RecursionInput::Single { vk, proof, is_first_shard: false }
     }
 
     /// Reduce shards proofs to a single shard proof using the recursion prover.
