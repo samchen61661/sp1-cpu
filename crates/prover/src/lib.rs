@@ -34,6 +34,7 @@ use std::{
 
 use crate::shapes::SP1CompressProgramShape;
 use lru::LruCache;
+use std::io::Cursor;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;
@@ -397,11 +398,12 @@ impl<C: SP1ProverComponents> SP1Prover<C> {
         })
     }
 
-    pub fn compress_proofs(
+    #[instrument(name = "compress_proofs_trace", level = "info", skip_all)]
+    pub fn compress_proofs_trace(
         &self,
         input: &RecursionInput,
         is_complete: bool,
-    ) -> Result<SP1ReduceProof<InnerSC>, SP1RecursionProverError> {
+    ) -> (Vec<(String, RowMajorMatrix<Val<InnerSC>>)>, ExecutionRecord<BabyBear>) {
         let mut witness_stream = Vec::new();
         let (witness_stream, program) = match input {
             RecursionInput::Single { vk, proof, is_first_shard } => {
@@ -436,6 +438,45 @@ impl<C: SP1ProverComponents> SP1Prover<C> {
         self.compress_prover.machine().generate_dependencies_no_opt(&mut records, None);
 
         let traces = self.compress_prover.generate_traces(&records[0]);
+        
+        // Serialize traces to bytes and print total size
+        let mut total_size_bytes = 0;
+        for (name, matrix) in &traces {
+            // Calculate size: name + matrix data
+            let name_size = name.len();
+            let matrix_size = matrix.values.len() * std::mem::size_of::<Val<InnerSC>>();
+            let trace_size = name_size + matrix_size;
+            total_size_bytes += trace_size;
+            tracing::info!("Trace '{}': {} bytes", name, trace_size);
+        }
+        
+        let total_size_mb = total_size_bytes as f64 / (1024.0 * 1024.0);
+        tracing::info!("Total traces size: {} bytes ({:.2} MB)", total_size_bytes, total_size_mb);
+        
+        (traces, records.into_iter().next().unwrap())
+    }
+
+    pub fn compress_proofs_prove(
+        &self,
+        input: &RecursionInput,
+        is_complete: bool,
+        traces: Vec<(String, RowMajorMatrix<Val<InnerSC>>)>,
+        record: ExecutionRecord<BabyBear>,
+    ) -> Result<SP1ReduceProof<InnerSC>, SP1RecursionProverError> {
+        let program = match input {
+            RecursionInput::Single { vk, proof, is_first_shard } => {
+                let input = self.prepare_first_layer_input(&vk, &proof, *is_first_shard);
+                self.recursion_program(&input)
+            }
+            RecursionInput::Double { vks_and_proofs } => {
+                let input = SP1CompressWitnessValues {
+                    vks_and_proofs: vks_and_proofs.to_vec(),
+                    is_complete,
+                };
+                let input_with_merkle = self.make_merkle_proofs(input);
+                self.compress_program(false, &input_with_merkle)
+            }
+        };
 
         // Get the keys.
         let (pk, vk) = self.compress_prover.setup(&program);
@@ -447,12 +488,12 @@ impl<C: SP1ProverComponents> SP1Prover<C> {
         // [Debug]
         //        *self.compress_prover.debug_constraints(
         //            &self.compress_prover.pk_to_host(&pk),
-        //            vec![records[0].clone()],
+        //            vec![record.clone()],
         //            &mut challenger.clone(),
         //        );
 
         // Commit to the record and traces.
-        let data = self.compress_prover.commit(&records[0], traces);
+        let data = self.compress_prover.commit(&record, traces);
 
         // Generate the proof.
         let proof = tracing::debug_span!("open")
@@ -469,6 +510,18 @@ impl<C: SP1ProverComponents> SP1Prover<C> {
             .unwrap();
 
         Ok(SP1ReduceProof { vk, proof })
+    }
+
+    pub fn compress_proofs(
+        &self,
+        input: &RecursionInput,
+        is_complete: bool,
+    ) -> Result<SP1ReduceProof<InnerSC>, SP1RecursionProverError> {
+        // Generate traces and record
+        let (traces, record) = self.compress_proofs_trace(input, is_complete);
+        
+        // Generate proof using the traces and record
+        self.compress_proofs_prove(input, is_complete, traces, record)
     }
 
     /// Reduce shards proofs to a single shard proof using the recursion prover.

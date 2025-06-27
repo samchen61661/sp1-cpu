@@ -338,7 +338,7 @@ pub fn run_recursion_two_to_one(
     Ok(recursion_input)
 }
 
-/*
+/* 
 pub fn compress_all_proofs(num_proofs: usize) -> Result<()> {
     let prover = SP1Prover::<DefaultProverComponents>::new();
     for i in 0..num_proofs {
@@ -378,4 +378,4 @@ pub fn compress_all_proofs(num_proofs: usize) -> Result<()> {
 
     Ok(())
 }
- */
+*/

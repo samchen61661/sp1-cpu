@@ -2,6 +2,9 @@ mod cpu;
 #[cfg(feature = "cuda")]
 mod cuda;
 mod mock;
+mod serialize_inputs;
+pub(crate) mod serialize_primitives;
+mod serialize_proof;
 
 pub use cpu::CpuProver;
 #[cfg(feature = "cuda")]
