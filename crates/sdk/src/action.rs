@@ -345,6 +345,11 @@ pub fn run_recursion_two_to_one(
      */
 }
 
+pub fn run_recursion_proof_generation(cpu_result: RecursionCpuResult) -> RecursionInput {
+    let prover = SP1Prover::<DefaultProverComponents>::new();
+    prover.compress_proofs_prove(cpu_result)
+}
+
 /*
 pub fn compress_all_proofs(num_proofs: usize) -> Result<()> {
     let prover = SP1Prover::<DefaultProverComponents>::new();

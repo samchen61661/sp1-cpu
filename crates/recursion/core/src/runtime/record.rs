@@ -8,8 +8,9 @@ use super::{
     BaseAluEvent, BatchFRIEvent, CommitPublicValuesEvent, ExpReverseBitsEvent, ExtAluEvent,
     FriFoldEvent, MemEvent, Poseidon2Event, RecursionProgram, RecursionPublicValues, SelectEvent,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct ExecutionRecord<F> {
     pub program: Arc<RecursionProgram<F>>,
     /// The index of the shard.

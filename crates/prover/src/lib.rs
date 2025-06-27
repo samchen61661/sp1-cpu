@@ -85,6 +85,7 @@ pub use types::*;
 use utils::{sp1_committed_values_digest_bn254, sp1_vkey_digest_bn254, words_to_bytes};
 
 use components::{DefaultProverComponents, SP1ProverComponents};
+use serde::{Deserialize, Serialize};
 
 pub use sp1_core_machine::SP1_CIRCUIT_VERSION;
 
@@ -124,7 +125,7 @@ enum TracesOrInput {
     CircuitWitness(Box<SP1CircuitWitness>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecursionCpuResult {
     pub traces: Vec<(String, RowMajorMatrix<Val<InnerSC>>)>,
     pub record: ExecutionRecord<BabyBear>,
